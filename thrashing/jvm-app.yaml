@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: petclinic-thrashing
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: petclinic-thrashing
+  template:
+    metadata:
+      labels:
+        app: petclinic-thrashing
+    spec:
+      containers:
+      - name: petclinic-thrashing
+        image: springcommunity/spring-framework-petclinic
+        ports:
+        - containerPort: 8080
+        resources:
+          requests:
+            cpu: "10m"
+            memory: "800Mi"
+        # readinessProbe:
+        #   failureThreshold: 3
+        #   httpGet:
+        #     path: /
+        #     port: 8080
+        #     scheme: HTTP
+        #   periodSeconds: 10
+        #   successThreshold: 1
+        #   initialDelaySeconds: 60
+          # successThreshold: 1
+          # failureThreshold: 3
+        # livenessProbe:
+        #   httpGet:
+        #     path: /heathz
+        #     port: 8080
+        #   initialDelaySeconds: 300
+        #   periodSeconds: 10
+          # failureThreshold: 3
+        # startupProbe:
+        #   httpGet:
+        #     path: /actuator/health
+        #     port: 8080
+        #   initialDelaySeconds: 60
+        #   periodSeconds: 10
+        #   failureThreshold: 10
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: petclinic-hpa-thrashing
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: petclinic-thrashing
+  minReplicas: 1
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 50
+  # behavior:
+  #   scaleDown:
+  #     stabilizationWindowSeconds: 0
+  #   scaleUp:
+  #     stabilizationWindowSeconds: 0
+
