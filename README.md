@@ -23,7 +23,7 @@ When a new JVM instance starts, it undergoes a JIT compilation phase, during whi
 
 If the HPA is configured to scale based on CPU utilization, it will detect the spike associated with the JIT compilation process at startup time and assume that the application requires more resources. The HPA will then initiate the scaling process by creating additional pods or replicas. However, the new replicas also have CPU bursts much higher than the long term CPU usage at startup time. The HPA will analyze the overall CPU utilization across all replicas and determine that the utilization is higher than the target utilization. This can cause the HPA to initiate another scaling event, creating even more replicas. This cycle can continue, with the HPA constantly scaling out to compensate for the perceived high CPU usage, only to find that the usage drops back down once the new replicas are online. This thrashing can lead to resource wastage, increased costs, and potential instability in the cluster.
 
-You can visualize the trashing by running `kubectl apply thrashing/jvm-app.yaml`. This deploys the pet clinic JVM application with a liveness probe. HPA is set to scale on CPU with a target utilization of 80% and `max_replicas=10`. This creates the thrashing in the Figure below.
+You can visualize the trashing by running `kubectl apply -f thrashing/jvm-app.yaml`. This deploys the pet clinic JVM application with a liveness probe. HPA is set to scale on CPU with a target utilization of 80% and `max_replicas=10`. This creates the thrashing in the Figure below.
 
 
 ![fig1](<images/figure1.png>)
@@ -40,7 +40,7 @@ Without a readiness probe configured, the HPA will use the CPU usage data, inclu
 
 To break this cycle, it's essential to provide the HPA with accurate information about the application's readiness state. By configuring a readiness probe with an appropriate `initialDelaySeconds` value, you can instruct Kubernetes to exclude containers from receiving traffic until they have completed the JIT compilation phase and are truly ready to handle requests. This prevents the HPA from reacting to the temporary CPU burst and avoids unnecessary scaling events.
 
-You can visualize a controlled scaling JVM application using `kubectl apply controlled-scaling/jvm-app.yaml`. The `initialDelaySeconds` is set by looking at how long the initial CPU usage burst takes to decrease to its long term value.
+You can visualize a controlled scaling JVM application using `kubectl apply -f controlled-scaling/jvm-app.yaml`. The `initialDelaySeconds` is set by looking at how long the initial CPU usage burst takes to decrease to its long term value.
 
 ```
         readinessProbe:
