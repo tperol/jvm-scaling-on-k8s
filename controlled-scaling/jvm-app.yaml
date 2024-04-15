@@ -1,19 +1,19 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: petclinic-thrashing-6
+  name: petclinic-controlled-scaling-6
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: petclinic-thrashing-6
+      app: petclinic-controlled-scaling-6
   template:
     metadata:
       labels:
-        app: petclinic-thrashing-6
+        app: petclinic-controlled-scaling-6
     spec:
       containers:
-      - name: petclinic-thrashing-6
+      - name: petclinic-controlled-scaling-6
         image: springcommunity/spring-framework-petclinic
         ports:
         - containerPort: 8080
@@ -21,6 +21,14 @@ spec:
           requests:
             cpu: "10m"
             memory: "800Mi"
+        readinessProbe:
+          failureThreshold: 3
+          httpGet:
+            path: /
+            port: 8080
+            scheme: HTTP
+          periodSeconds: 10
+          initialDelaySeconds: 180
         livenessProbe:
           httpGet:
             path: /
@@ -31,12 +39,12 @@ spec:
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: petclinic-hpa-thrashing-6
+  name: petclinic-hpa-controlled-scaling-6
 spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: petclinic-thrashing-6
+    name: petclinic-controlled-scaling-6
   minReplicas: 1
   maxReplicas: 10
   metrics:
@@ -46,4 +54,10 @@ spec:
       target:
         type: Utilization
         averageUtilization: 80
+  # behavior:
+  # These are the default values for reference
+  #   scaleDown:
+  #     stabilizationWindowSeconds: 300
+  #   scaleUp:
+  #     stabilizationWindowSeconds: 0
 
