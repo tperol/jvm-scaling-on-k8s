@@ -1,7 +1,19 @@
 # Understanding how to scale JVM application on Kubernetes
 
+## Table of Contents
 
-One of the challenges when scaling JVM-based applications in Kubernetes using a Horizontal Pod Autoscaler (HPA) is the potential for thrashing due to the CPU burst that occurs during the JVM's Just-In-Time (JIT) compilation process. Applications are frequently scaling on CPU using the HPA. The CPU burst at startup time can trigger the HPA to scale up the number of replicas unnecessarily, leading to resource wastage and potential instability.
+- [Understanding how to scale JVM application on Kubernetes](#understanding-how-to-scale-jvm-application-on-kubernetes)
+  - [Table of Contents](#table-of-contents)
+  - [Thrashing when scaling a JVM on CPU utilization](#thrashing-when-scaling-a-jvm-on-cpu-utilization)
+    - [Vertical right sizing: setting requests and limits using StormForge recommendations](#vertical-right-sizing-setting-requests-and-limits-using-stormforge-recommendations)
+    - [The risk of thrashing when scaling on CPU utilization](#the-risk-of-thrashing-when-scaling-on-cpu-utilization)
+  - [Controlled scaling of JVM applications](#controlled-scaling-of-jvm-applications)
+    - [Using the Readiness Probe](#using-the-readiness-probe)
+    - [Using stabilizationWindowSeconds in the HPA configuration](#using-stabilizationwindowseconds-in-the-hpa-configuration)
+  - [Discussion](#discussion)
+  - [Conclusion](#conclusion)
+
+One of the challenges when scaling JVM-based applications in Kubernetes using a Horizontal Pod Autoscaler (HPA) is the potential for thrashing due to the CPU burst that occurs during the JVM's Just-In-Time (JIT) compilation process. Applications are frequently scaled on CPU using the HPA. The CPU burst at startup time can trigger the HPA to scale up the number of replicas unnecessarily, leading to resource wastage and potential instability.
 
 In this blogpost we will show how to right-size JVM applications running on Kubernetes and how to create a controlled scaling environment using the HPA and CPU utilization as the target scaling metric.
 
@@ -11,7 +23,9 @@ In this blogpost we will show how to right-size JVM applications running on Kube
 
 When a new JVM instance starts, it undergoes a JIT compilation phase, during which it analyzes and optimizes the application for improved performance. This process is CPU-intensive and can cause a temporary spike in CPU usage. To allow the CPU usage of the pod to burst, **we avoid setting limits while we set the requests according to the long steady state CPU usage of the pod using StormForge Machine learning driven recommendations.**
 
-```
+[StormForge](https://stormforge.io) is a Kubernetes resource optimization and cost management platform. It uses machine learning to analyze your applications and workloads, and provides recommendations for setting optimal resource requests and limits based on actual usage patterns. By right-sizing your resources, StormForge helps you optimize resource utilization, reduce costs, and improve cluster stability.
+
+```yaml
         resources:
           requests:
             cpu: "10m"
@@ -19,7 +33,7 @@ When a new JVM instance starts, it undergoes a JIT compilation phase, during whi
 
 ```
 
-### Scaling using HPA on CPU utilization: the risk of thrashing
+### The risk of thrashing when scaling on CPU utilization
 
 If the HPA is configured to scale based on CPU utilization, it will detect the spike associated with the JIT compilation process at startup time and assume that the application requires more resources. The HPA will then initiate the scaling process by creating additional pods or replicas. However, the new replicas also have CPU bursts much higher than the long term CPU usage at startup time. The HPA will analyze the overall CPU utilization across all replicas and determine that the utilization is higher than the target utilization. This can cause the HPA to initiate another scaling event, creating even more replicas. This cycle can continue, with the HPA constantly scaling out to compensate for the perceived high CPU usage, only to find that the usage drops back down once the new replicas are online. This thrashing can lead to resource wastage, increased costs, and potential instability in the cluster.
 
@@ -38,11 +52,11 @@ Without a readiness probe configured, the HPA will use the CPU usage data, inclu
 
 ### Using the Readiness Probe
 
-To break this cycle, it's essential to provide the HPA with accurate information about the application's readiness state. By configuring a readiness probe with an appropriate `initialDelaySeconds` value, you can instruct Kubernetes to exclude containers from receiving traffic until they have completed the JIT compilation phase and are truly ready to handle requests. This prevents the HPA from reacting to the temporary CPU burst and avoids unnecessary scaling events.
+To break this cycle, it's essential to provide the HPA with accurate information about the application's readiness state. By configuring a readiness probe with an appropriate `initialDelaySeconds` value, you can instruct Kubernetes to exclude containers from receiving traffic until they have completed the JIT compilation phase and are truly ready to handle requests. This prevents the HPA from reacting to the temporary CPU burst and avoiding unnecessary scaling events.
 
 You can visualize a controlled scaling JVM application using `kubectl apply -f controlled-scaling/jvm-app.yaml`. The `initialDelaySeconds` is set by looking at how long the initial CPU usage burst takes to decrease to its long term value.
 
-```
+```yaml
         readinessProbe:
           httpGet:
             path: /
@@ -68,7 +82,32 @@ Setting up a properly configured readiness probe is the best way to mitigate thi
 
 Alternatively, you could consider increasing the `scaleUp: stabilizationWindowSeconds` for the HPA, which would instruct the HPA to use a window-based approach for calculating metrics instead of the current metric value. This means that the HPA would only consider CPU utilization values within a specific time window, effectively ignoring the high CPU usage during startup.
 
-# Discussion
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: petclinic-hpa-controlled-scaling-6
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: petclinic-controlled-scaling-6
+  minReplicas: 1
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 80
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300 # default value
+    scaleUp:
+      stabilizationWindowSeconds: 180 # default value is 0
+```
+## Discussion
 
 A properly tuned `readinessProbe` offers a good solution for scaling JVM applications. The main challenge resides in selecting an appropriate `initialDelaySeconds` value. While this also potentially delays the scaling out process, reducing the HPA's targetUtilization value provides a safeguard. StormForge provides recommendations for correctly vertical sizing workloads alongside the HPA target utilization value. Note that the readiness probe used here is `/`, which checks the root path. A more dedicated endpoint like `/actuator/health/readiness` would allow avoiding the `initialDelaySeconds` delay and provide a more accurate readiness check.
 
